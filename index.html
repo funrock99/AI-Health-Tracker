@@ -120,6 +120,7 @@
             const petSelector = document.getElementById('petSelector');
             const currentPet = petSelector.value;
 
+            document.getElementById('loader').innerHTML = '<p aria-busy="true">正在從 Notion 讀取數據...</p>';
             document.getElementById('loader').style.display = 'block';
             document.getElementById('bgChart').style.display = 'none';
             if (chartInstance) chartInstance.destroy();
@@ -141,10 +142,13 @@
                 const result = await response.json();
                 if (result.status === 'error') throw new Error(`驗證失敗: ${result.message}`);
                 
+                // 確保篩選區塊在驗證成功後一定會顯示，這樣使用者才能修改日期
+                document.getElementById('filter-section').style.display = 'flex';
+                
                 allData = result.data;
                 
                 if (allData.length === 0) {
-                    document.getElementById('loader').innerHTML = '<p>該區間尚無紀錄數據。</p>';
+                    document.getElementById('loader').innerHTML = '<p>該區間尚無紀錄數據。請嘗試調整日期範圍。</p>';
                     return;
                 }
 
@@ -152,12 +156,9 @@
                 const petNames = [...new Set(allData.map(item => item.pet))];
                 petSelector.innerHTML = petNames.map(name => `<option value="${name}">${name}</option>`).join('');
                 
-                // 恢復先前的選擇 (如果新資料仍包含)
                 if (currentPet && petNames.includes(currentPet)) {
                     petSelector.value = currentPet;
                 }
-                
-                document.getElementById('filter-section').style.display = 'flex';
                 
                 // 呼叫本地過濾 (根據選定的對象)
                 filterChart();
