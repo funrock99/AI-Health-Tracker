@@ -82,3 +82,35 @@ function handleWebSubmitRequest(contents) {
     message: isSuccess ? '' : (result ? result.error : 'Unknown Error')
   })).setMimeType(ContentService.MimeType.JSON);
 }
+
+/**
+ * 處理來自網頁表單 (LIFF) 取得草稿資料的請求
+ */
+function handleDraftDataRequest(contents) {
+  const subTag = "DraftData";
+  // 安全檢查：驗證 LIFF Token
+  const userId = getUserIdFromToken(contents.accessToken);
+  if (!userId || !isUserAllowed(userId)) {
+    SysLog.warn(subTag, "Unauthorized attempt", { userId: userId });
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Forbidden' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  const draftId = contents.draftId;
+  if (!draftId) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Missing draftId' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  const cache = CacheService.getScriptCache();
+  const cachedData = cache.get("draft_" + draftId);
+  
+  if (!cachedData) {
+    SysLog.info(subTag, "Draft not found or expired", { draftId: draftId });
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Draft not found or expired' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  return ContentService.createTextOutput(JSON.stringify({ status: 'ok', data: JSON.parse(cachedData) }))
+    .setMimeType(ContentService.MimeType.JSON);
+}

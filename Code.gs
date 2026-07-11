@@ -55,6 +55,11 @@ function doPost(e) {
       return handleWebSubmitRequest(contents);
     }
 
+    // --- 路由：處理來自網頁表單 (LIFF) 取得草稿資料的請求 ---
+    if (contents.action === 'getDraftData') {
+      return handleDraftDataRequest(contents);
+    }
+
     // --- 路由：處理 LINE 驗證與事件 ---
     if (!contents.events || contents.events.length === 0) {
       return ContentService.createTextOutput(JSON.stringify({status: 'ok'})).setMimeType(ContentService.MimeType.JSON);

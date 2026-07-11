@@ -70,20 +70,58 @@
                     liff.login();
                 }
                 
-                // --- 新增：從 URL 參數預填資料 ---
                 const urlParams = new URLSearchParams(window.location.search);
-                if (urlParams.has('pet')) document.getElementById('petName').value = urlParams.get('pet');
-                if (urlParams.has('bg')) document.getElementById('bg').value = urlParams.get('bg');
-                if (urlParams.has('ins')) document.getElementById('insulin').value = urlParams.get('ins');
-                if (urlParams.has('food')) document.getElementById('food').value = urlParams.get('food');
-                if (urlParams.has('note')) document.getElementById('note').value = urlParams.get('note');
-
-                if (urlParams.has('time')) {
-                    // 將 "YYYY-MM-DD HH:mm" 轉換為 "YYYY-MM-DDTHH:mm"
-                    const timeParam = urlParams.get('time').replace(' ', 'T');
-                    document.getElementById('time').value = timeParam;
+                
+                if (urlParams.has('draftId')) {
+                    document.getElementById('loading').style.display = 'flex';
+                    const draftId = urlParams.get('draftId');
+                    
+                    try {
+                        const response = await fetch(GAS_URL, {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                action: 'getDraftData',
+                                accessToken: liff.getAccessToken(),
+                                draftId: draftId
+                            })
+                        });
+                        const result = await response.json();
+                        
+                        if (result.status === 'ok' && result.data) {
+                            const data = result.data;
+                            if (data.pet) document.getElementById('petName').value = data.pet;
+                            if (data.bg) document.getElementById('bg').value = data.bg;
+                            if (data.ins) document.getElementById('insulin').value = data.ins;
+                            if (data.food) document.getElementById('food').value = data.food;
+                            if (data.note) document.getElementById('note').value = data.note;
+                            if (data.time) document.getElementById('time').value = data.time.replace(' ', 'T');
+                        } else {
+                            alert('⚠️ 草稿已過期或無法讀取，請手動填寫。');
+                            setFallbackTime();
+                        }
+                    } catch (err) {
+                        console.error('Fetch draft error:', err);
+                        setFallbackTime();
+                    } finally {
+                        document.getElementById('loading').style.display = 'none';
+                    }
                 } else {
-                    // 設定預設時間為現在 (台灣時區)
+                    // Fallback for legacy explicit parameters
+                    if (urlParams.has('pet')) document.getElementById('petName').value = urlParams.get('pet');
+                    if (urlParams.has('bg')) document.getElementById('bg').value = urlParams.get('bg');
+                    if (urlParams.has('ins')) document.getElementById('insulin').value = urlParams.get('ins');
+                    if (urlParams.has('food')) document.getElementById('food').value = urlParams.get('food');
+                    if (urlParams.has('note')) document.getElementById('note').value = urlParams.get('note');
+
+                    if (urlParams.has('time')) {
+                        const timeParam = urlParams.get('time').replace(' ', 'T');
+                        document.getElementById('time').value = timeParam;
+                    } else {
+                        setFallbackTime();
+                    }
+                }
+                
+                function setFallbackTime() {
                     const now = new Date();
                     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
                     document.getElementById('time').value = now.toISOString().slice(0, 16);

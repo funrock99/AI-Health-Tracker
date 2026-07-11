@@ -113,16 +113,20 @@ function sendVoiceResultFlex(replyToken, result, userId) {
     finalTimeStr = localTime.toISOString().slice(0, 16).replace('T', ' ');
   }
 
-  const params = [];
-  // 使用 != null 以便保留 0 值的數值數據
-  if (result.glucose != null) params.push(`bg=${result.glucose}`);
-  if (result.insulin != null) params.push(`ins=${result.insulin}`);
-  if (result.food != null) params.push(`food=${result.food}`);
-  if (result.note) params.push(`note=${encodeURIComponent(result.note)}`);
-  params.push(`time=${encodeURIComponent(finalTimeStr)}`);
-  params.push(`pet=${encodeURIComponent(PET_NAME)}`);
+  const draftId = Utilities.getUuid();
+  const cache = CacheService.getScriptCache();
   
-  const finalUrl = liffUrl + (params.length > 0 ? "?" + params.join("&") : "");
+  const draftData = {
+    bg: result.glucose,
+    ins: result.insulin,
+    food: result.food,
+    note: result.note,
+    time: finalTimeStr,
+    pet: PET_NAME
+  };
+  
+  cache.put("draft_" + draftId, JSON.stringify(draftData), 300); // 存活 5 分鐘
+  const finalUrl = liffUrl + "?draftId=" + draftId;
 
   const flexData = {
     type: "bubble",
