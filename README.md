@@ -187,6 +187,7 @@ LINE Messaging API 建議 Webhook 接收端驗證 HTTP Header 中的 `x-line-sig
 - [x] Dashboard 整合 LINE Login
 - [x] 移除 URL Query String 共用金鑰
 - [x] GAS 後端驗證 LINE ID Token
+- [x] 後端程式碼模組化 (Services 與 Controllers)
 
 
 
@@ -202,9 +203,9 @@ LINE Messaging API 建議 Webhook 接收端驗證 HTTP Header 中的 `x-line-sig
 
 若要自行部署此專案，請依照以下步驟將程式碼部署至 Google Apps Script (GAS)：
 
-### 1. 建立專案與貼上程式碼
+### 1. 建立專案與匯入程式碼
 1. 前往 Google Apps Script 建立新專案。
-2. 僅將本專案中的 `Code.gs` 內容複製並貼上至 GAS 編輯器中（`form.html` 與 `index.html` 為前端網頁，不需放到 GAS）。
+2. 由於本專案採用模組化設計，包含多個 `.gs` 檔案（如 `AuthService.gs`、`LineService.gs` 等），強烈建議直接透過下方的**第 6 步：自動化部署**將程式碼同步到 GAS。如果您想手動貼上，請確保將專案中所有的 `.gs` 檔案內容皆複製到您的 GAS 專案中。
 
 ### 2. 設定環境變數 (Script Properties)
 在 GAS 編輯器左側，點擊「專案設定 (齒輪圖示)」，新增指令碼屬性：
@@ -246,5 +247,4 @@ LINE Messaging API 建議 Webhook 接收端驗證 HTTP Header 中的 `x-line-sig
 4. **取得登入憑證**：在本機終端機輸入 `npm install -g @google/clasp` 安裝 clasp，然後執行 `clasp login` 登入 Google 帳號。完成後，將 `~/.clasprc.json` 檔案內的整段內容複製起來。
 5. **設定 GitHub Secrets**：前往 GitHub 專案的 **Settings** > **Secrets and variables** > **Actions**，新增名為 `CLASP_TOKEN` 的 Secret，並貼上剛剛複製的內容。
 6. **修改 `deploy.yml` 部署 ID (選擇性)**：若希望每次 Push 不只更新程式碼，還能「自動更新上線的 Web App 版本」，請修改 `.github/workflows/deploy.yml` 中的 `clasp deploy -i <您的_Deployment_ID>` 參數。
-
-完成後，每次將修改推送到 GitHub 的 `main` 分支時，GitHub Actions 就會自動將 `Code.gs` 覆蓋至 GAS 專案並發布新版本！
+完成後，每次將修改推送到 GitHub 的 `main` 分支時，GitHub Actions 就會自動將所有 `.gs` 檔案同步至 GAS 專案中！
