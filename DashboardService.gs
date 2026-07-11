@@ -72,9 +72,13 @@ function handleWebSubmitRequest(contents) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Invalid BG' })).setMimeType(ContentService.MimeType.JSON);
   }
 
-  const success = saveToNotion(bg, insulin || "0", food || "0", note || "無", finalTime, petName);
+  const result = saveToNotion(bg, insulin || "0", food || "0", note || "無", finalTime, petName);
   
-  SysLog.info(subTag, success ? "Success" : "Failed", { pet: petName, bg: bg });
-  return ContentService.createTextOutput(JSON.stringify({ status: success ? 'ok' : 'error' }))
-    .setMimeType(ContentService.MimeType.JSON);
+  const isSuccess = result && result.success;
+  SysLog.info(subTag, isSuccess ? "Success" : "Failed", { pet: petName, bg: bg, error: isSuccess ? null : result.error });
+  
+  return ContentService.createTextOutput(JSON.stringify({ 
+    status: isSuccess ? 'ok' : 'error', 
+    message: isSuccess ? '' : (result ? result.error : 'Unknown Error')
+  })).setMimeType(ContentService.MimeType.JSON);
 }
