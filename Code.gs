@@ -109,6 +109,9 @@ function doPost(e) {
     if (contents.action === 'getDashboardData') {
       const subTag = "DashboardData";
       const idToken = contents.idToken;
+      const startDate = contents.startDate;
+      const endDate = contents.endDate;
+
       if (!idToken) {
         return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Missing Token' }))
           .setMimeType(ContentService.MimeType.JSON);
@@ -130,8 +133,26 @@ function doPost(e) {
           .setMimeType(ContentService.MimeType.JSON);
       }
       
-      // 驗證成功後才查詢 Notion
-      const data = fetchFromNotion();
+      // 驗證成功後才查詢 Notion，加入快取機制
+      const cache = CacheService.getScriptCache();
+      const cacheKey = "notion_data_" + (startDate || "all") + "_" + (endDate || "all");
+      const cachedData = cache.get(cacheKey);
+      const cachedTime = cache.get(cacheKey + "_time");
+      const lastUpdate = cache.get("notion_last_update") || "0";
+      
+      let data;
+      // 如果快取存在，且快取時間晚於最後更新時間，則使用快取
+      if (cachedData && cachedTime && parseInt(cachedTime) >= parseInt(lastUpdate)) {
+        data = JSON.parse(cachedData);
+        SysLog.info(subTag, "Cache Hit", { key: cacheKey });
+      } else {
+        data = fetchFromNotion(startDate, endDate);
+        // 將查詢結果快取 6 小時 (21600秒)
+        cache.put(cacheKey, JSON.stringify(data), 21600);
+        cache.put(cacheKey + "_time", Date.now().toString(), 21600);
+        SysLog.info(subTag, "Cache Miss or Stale, fetched from Notion", { key: cacheKey });
+      }
+
       return ContentService.createTextOutput(JSON.stringify({ status: 'ok', data: data }))
         .setMimeType(ContentService.MimeType.JSON);
     }
@@ -367,29 +388,52 @@ function saveToNotion(bg, insulin, food, note, time, petName) {
       payload: JSON.stringify(payload)
     };
     const res = safeFetch(url, options, tag);
-    return res && res.getResponseCode() === 200;
-  } catch (e) { 
+    const success = res && res.getResponseCode() === 200;
+    
+    // 如果寫入成功，更新最後異動時間，以使快取失效
+    if (success) {
+      CacheService.getScriptCache().put("notion_last_update", Date.now().toString(), 21600);
+    }
+    
+    return success;
+  } catch (e) {  
     SysLog.error(tag, "Unexpected Error", e.message);
     return false; 
   }
 }
 
 /**
- * Notion API：讀取所有歷史數據 (支援分頁)
+ * Notion API：讀取歷史數據 (支援分頁、日期過濾、限制筆數)
  */
-function fetchFromNotion() {
+function fetchFromNotion(startDate, endDate) {
   const tag = "NotionQuery";
   let allResults = [];
   let hasMore = true;
   let nextCursor = null;
+  const MAX_RECORDS = 300; // 限制單次回傳最大筆數
 
   try {
     const url = `https://api.notion.com/v1/databases/${DATABASE_ID}/query`;
     
-    while (hasMore) {
+    // 建立 Notion Filter
+    const filter = { and: [] };
+    if (startDate) {
+      filter.and.push({ property: '時間', date: { on_or_after: startDate } });
+    }
+    if (endDate) {
+      // 確保包含結束日期當天的所有時間
+      filter.and.push({ property: '時間', date: { on_or_before: endDate + "T23:59:59+08:00" } }); 
+    }
+
+    while (hasMore && allResults.length < MAX_RECORDS) {
       const payload = {
-        sorts: [{ property: '時間', direction: 'ascending' }]
+        sorts: [{ property: '時間', direction: 'ascending' }],
+        page_size: 100 // 單頁限制
       };
+      
+      if (filter.and.length > 0) {
+        payload.filter = filter;
+      }
       if (nextCursor) payload.start_cursor = nextCursor;
 
       const options = {
@@ -411,6 +455,11 @@ function fetchFromNotion() {
       allResults = allResults.concat(data.results);
       hasMore = data.has_more;
       nextCursor = data.next_cursor;
+    }
+
+    // 如果超過最大筆數，進行截斷
+    if (allResults.length > MAX_RECORDS) {
+      allResults = allResults.slice(0, MAX_RECORDS);
     }
 
     return allResults.map(p => ({

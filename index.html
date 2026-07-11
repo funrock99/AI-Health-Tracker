@@ -48,11 +48,11 @@
                 </div>
                 <div style="flex: 1; min-width: 150px;">
                     <label for="startDate">開始日期：</label>
-                    <input type="date" id="startDate" onchange="filterChart()">
+                    <input type="date" id="startDate" onchange="fetchAndRenderChart()">
                 </div>
                 <div style="flex: 1; min-width: 150px;">
                     <label for="endDate">結束日期：</label>
-                    <input type="date" id="endDate" onchange="filterChart()">
+                    <input type="date" id="endDate" onchange="fetchAndRenderChart()">
                 </div>
             </div>
         </div>
@@ -114,8 +114,16 @@
             }
         }
 
-        async function initChart() {
-            initDateFilters();
+        async function fetchAndRenderChart() {
+            const start = document.getElementById('startDate').value;
+            const end = document.getElementById('endDate').value;
+            const petSelector = document.getElementById('petSelector');
+            const currentPet = petSelector.value;
+
+            document.getElementById('loader').style.display = 'block';
+            document.getElementById('bgChart').style.display = 'none';
+            if (chartInstance) chartInstance.destroy();
+
             try {
                 const idToken = liff.getIDToken();
                 const response = await fetch(GAS_URL, {
@@ -123,42 +131,46 @@
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({
                         action: 'getDashboardData',
-                        idToken: idToken
+                        idToken: idToken,
+                        startDate: start,
+                        endDate: end
                     })
                 });
                 
                 if (!response.ok) throw new Error('網路連線失敗');
-                
                 const result = await response.json();
-                
-                if (result.status === 'error') {
-                    throw new Error(`驗證失敗: ${result.message}`);
-                }
+                if (result.status === 'error') throw new Error(`驗證失敗: ${result.message}`);
                 
                 allData = result.data;
                 
                 if (allData.length === 0) {
-                    document.getElementById('loader').innerHTML = '<p>尚無紀錄數據。</p>';
+                    document.getElementById('loader').innerHTML = '<p>該區間尚無紀錄數據。</p>';
                     return;
                 }
 
-                // 提取所有不重複的對象姓名
+                // 提取並更新選項
                 const petNames = [...new Set(allData.map(item => item.pet))];
-                const selector = document.getElementById('petSelector');
+                petSelector.innerHTML = petNames.map(name => `<option value="${name}">${name}</option>`).join('');
                 
-                // 清空並生成選項
-                selector.innerHTML = petNames.map(name => `<option value="${name}">${name}</option>`).join('');
+                // 恢復先前的選擇 (如果新資料仍包含)
+                if (currentPet && petNames.includes(currentPet)) {
+                    petSelector.value = currentPet;
+                }
                 
-                // 顯示篩選區塊
                 document.getElementById('filter-section').style.display = 'flex';
-
-                // 初始繪圖
+                
+                // 呼叫本地過濾 (根據選定的對象)
                 filterChart();
 
             } catch (error) {
                 console.error('Error:', error);
                 document.getElementById('loader').innerHTML = `<p style="color: red;">讀取失敗: ${error.message}<br>請確認 GAS 已正確部署並開啟權限。</p>`;
             }
+        }
+
+        async function initChart() {
+            initDateFilters();
+            await fetchAndRenderChart();
         }
 
         function filterChart() {
