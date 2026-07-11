@@ -233,3 +233,22 @@ LINE Messaging API 建議 Webhook 接收端驗證 HTTP Header 中的 `x-line-sig
 2. 找到 `GAS_URL` 替換為您的 Web App URL，並將 `index.html` 中的 `LIFF_ID` 換成您註冊的 LINE Login LIFF ID。
 3. 將這兩個檔案部署至網頁代管空間 (如 GitHub Pages)。
 4. 在 LINE Developer Console 中設定 LIFF App 的 Endpoint URL。
+
+### 6. 自動化部署 (CI/CD via GitHub Actions)
+為了避免每次修改 `Code.gs` 都需要手動複製貼上至 GAS 編輯器，本專案已支援透過 **GitHub Actions** 與 **clasp** 工具實現自動化部署。
+
+**設定步驟：**
+1. **開啟 GAS API 授權**：前往 [Google Apps Script 使用者設定頁面](https://script.google.com/home/usersettings) 將 API 設定為「開啟 (ON)」。
+2. **取得指令碼 ID**：在您的 GAS 專案中，點擊左側齒輪（專案設定），複製「指令碼 ID」。
+3. **建立 `.clasp.json`**：在專案根目錄建立此檔案，填入您的指令碼 ID：
+   ```json
+   {
+     "scriptId": "您的指令碼_ID",
+     "rootDir": "."
+   }
+   ```
+4. **取得登入憑證**：在本機終端機輸入 `npm install -g @google/clasp` 安裝 clasp，然後執行 `clasp login` 登入 Google 帳號。完成後，將 `~/.clasprc.json` 檔案內的整段內容複製起來。
+5. **設定 GitHub Secrets**：前往 GitHub 專案的 **Settings** > **Secrets and variables** > **Actions**，新增名為 `CLASP_TOKEN` 的 Secret，並貼上剛剛複製的內容。
+6. **修改 `deploy.yml` 部署 ID (選擇性)**：若希望每次 Push 不只更新程式碼，還能「自動更新上線的 Web App 版本」，請修改 `.github/workflows/deploy.yml` 中的 `clasp deploy -i <您的_Deployment_ID>` 參數。
+
+完成後，每次將修改推送到 GitHub 的 `main` 分支時，GitHub Actions 就會自動將 `Code.gs` 覆蓋至 GAS 專案並發布新版本！
