@@ -11,7 +11,8 @@
 const properties = PropertiesService.getScriptProperties();
 const NOTION_TOKEN = properties.getProperty('NOTION_TOKEN');
 const DATABASE_ID = properties.getProperty('DATABASE_ID');
-const LINE_ACCESS_TOKEN = properties.getProperty('LINE_ACCESS_TOKEN');
+// Automated Deployment Enabled via GitHub Actions
+const LINE_ACCESS_TOKEN = PropertiesService.getScriptProperties().getProperty('LINE_ACCESS_TOKEN');
 const APP_SECRET = properties.getProperty('APP_SECRET') || "my-secret-key"; 
 const ALLOWED_USERS = properties.getProperty('ALLOWED_USERS') ? properties.getProperty('ALLOWED_USERS').split(',') : []; 
 const PET_NAME = properties.getProperty('PET_NAME') || "紀錄對象"; 
