@@ -135,7 +135,7 @@ function doPost(e) {
       
       // 驗證成功後才查詢 Notion，加入快取機制
       const cache = CacheService.getScriptCache();
-      const cacheKey = "notion_data_v2_" + (startDate || "all") + "_" + (endDate || "all");
+      const cacheKey = "notion_data_v4_" + (startDate || "all") + "_" + (endDate || "all");
       const cachedData = cache.get(cacheKey);
       const cachedTime = cache.get(cacheKey + "_time");
       const lastUpdate = cache.get("notion_last_update") || "0";
@@ -415,14 +415,12 @@ function fetchFromNotion(startDate, endDate) {
   try {
     const url = `https://api.notion.com/v1/databases/${DATABASE_ID}/query`;
     
-    // 建立 Notion Filter
     const filter = { and: [] };
     if (startDate) {
       filter.and.push({ property: '時間', date: { on_or_after: startDate } });
     }
     if (endDate) {
-      // 確保包含結束日期當天的所有時間
-      filter.and.push({ property: '時間', date: { on_or_before: endDate + "T23:59:59+08:00" } }); 
+      filter.and.push({ property: '時間', date: { on_or_before: endDate } }); 
     }
 
     while (hasMore && allResults.length < MAX_RECORDS) {
@@ -448,7 +446,8 @@ function fetchFromNotion(startDate, endDate) {
 
       const res = safeFetch(url, options, tag);
       if (!res || res.getResponseCode() !== 200) {
-        throw new Error("Failed to fetch data from Notion");
+        let errorMsg = res ? res.getContentText() : "Unknown error";
+        throw new Error("Failed to fetch data from Notion: " + errorMsg);
       }
       
       const data = JSON.parse(res.getContentText());
@@ -462,14 +461,18 @@ function fetchFromNotion(startDate, endDate) {
       allResults = allResults.slice(0, MAX_RECORDS);
     }
 
-    return allResults.map(p => ({
-      pet: (p.properties["姓名"] && p.properties["姓名"].title && p.properties["姓名"].title.length > 0) ? p.properties["姓名"].title[0].text.content : PET_NAME,
-      bg: p.properties["血糖值"] ? p.properties["血糖值"].number : 0,
-      insulin: p.properties["胰島素劑量"] ? p.properties["胰島素劑量"].number : 0,
-      food: p.properties["飲食量"] ? p.properties["飲食量"].number : 0,
-      time: p.properties["時間"] ? p.properties["時間"].date.start : "",
-      note: (p.properties["備註"] && p.properties["備註"].rich_text[0]) ? p.properties["備註"].rich_text[0].text.content : ""
-    }));
+    return allResults.map(p => {
+      const props = p.properties;
+      return {
+        pet: (props["寵物名字"] && props["寵物名字"].title && props["寵物名字"].title.length > 0) ? props["寵物名字"].title[0].text.content : 
+             ((props["姓名"] && props["姓名"].title && props["姓名"].title.length > 0) ? props["姓名"].title[0].text.content : PET_NAME),
+        bg: (props["血糖值"] && props["血糖值"].number) ? props["血糖值"].number : 0,
+        insulin: (props["胰島素劑量"] && props["胰島素劑量"].number) ? props["胰島素劑量"].number : ((props["胰島素"] && props["胰島素"].number) ? props["胰島素"].number : 0),
+        food: (props["餵食量"] && props["餵食量"].number) ? props["餵食量"].number : ((props["飲食量"] && props["飲食量"].number) ? props["飲食量"].number : 0),
+        time: (props["時間"] && props["時間"].date) ? props["時間"].date.start : "",
+        note: (props["備註"] && props["備註"].rich_text && props["備註"].rich_text.length > 0) ? props["備註"].rich_text[0].text.content : ""
+      };
+    });
   } catch (e) {
     SysLog.error(tag, "Query Failed", e.message);
     return [];
