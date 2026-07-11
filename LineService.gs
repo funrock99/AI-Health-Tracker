@@ -70,7 +70,7 @@ function sendFlexTable(replyToken, userId) {
       ]
     },
     footer: { type: "box", layout: "vertical", spacing: "sm", contents: [
-        { type: "button", style: "primary", color: "#1DB446", action: { type: "uri", label: "🚀 快速填寫表單", uri: "https://liff.line.me/" + LIFF_CHANNEL_ID } },
+        { type: "button", style: "primary", color: "#1DB446", action: { type: "uri", label: "🚀 快速填寫表單", uri: "https://liff.line.me/2009743467-MeXtvnXF" } },
         { type: "button", style: "secondary", color: "#EEEEEE", action: { type: "postback", label: "✅ 確認提交(分步)", data: "action=submit" } }
       ]
     }
@@ -102,7 +102,7 @@ function getLineMessageContent(messageId) {
  * 發送語音解析結果 Flex Message
  */
 function sendVoiceResultFlex(replyToken, result, userId) {
-  const liffUrl = `https://liff.line.me/${LIFF_CHANNEL_ID}`;
+  const liffUrl = `https://liff.line.me/2009743467-MeXtvnXF`;
   
   // 處理時間：優先使用 Gemini 解析結果（需為有效字串且非 "null"），否則使用目前台灣時間
   let finalTimeStr = (result.datetime && result.datetime !== "null" && result.datetime !== "undefined") ? result.datetime : "";
