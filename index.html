@@ -80,7 +80,7 @@
         function initDateFilters() {
             const end = new Date();
             const start = new Date();
-            start.setMonth(end.getMonth() - 3);
+            start.setMonth(end.getMonth() - 1);
             
             // 格式化為在地日期 (YYYY-MM-DD)
             const toLocalDateString = (date) => {
@@ -115,10 +115,22 @@
         }
 
         async function fetchAndRenderChart() {
-            const start = document.getElementById('startDate').value;
-            const end = document.getElementById('endDate').value;
+            const uiStart = document.getElementById('startDate').value;
+            const uiEnd = document.getElementById('endDate').value;
             const petSelector = document.getElementById('petSelector');
             const currentPet = petSelector.value;
+
+            // 為了確保對象選單有充足的資料，固定向後端撈取至少前推 3 個月的資料
+            let fetchStart = new Date(uiEnd || new Date());
+            fetchStart.setMonth(fetchStart.getMonth() - 3);
+            const toLocalDateString = (date) => {
+                const y = date.getFullYear();
+                const m = String(date.getMonth() + 1).padStart(2, '0');
+                const d = String(date.getDate()).padStart(2, '0');
+                return `${y}-${m}-${d}`;
+            };
+            const fetchStartStr = toLocalDateString(fetchStart);
+            const requestStart = (uiStart && uiStart < fetchStartStr) ? uiStart : fetchStartStr;
 
             document.getElementById('loader').innerHTML = '<p aria-busy="true">正在從 Notion 讀取數據...</p>';
             document.getElementById('loader').style.display = 'block';
@@ -133,8 +145,8 @@
                     body: JSON.stringify({
                         action: 'getDashboardData',
                         idToken: idToken,
-                        startDate: start,
-                        endDate: end
+                        startDate: requestStart,
+                        endDate: uiEnd
                     })
                 });
                 
