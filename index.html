@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>寵物血糖紀錄趨勢圖</title>
+    <title>健康數據紀錄趨勢圖</title>
     <!-- Pico.css -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
     <!-- Chart.js -->
@@ -22,14 +22,14 @@
 <body>
     <main class="container">
         <hgroup>
-            <h1>🐾 寵物血糖監測系統</h1>
+            <h1>📊 健康數據監測系統</h1>
             <h2>歷史數據趨勢分析</h2>
         </hgroup>
 
         <div class="filter-container" id="filter-section" style="display: none; flex-direction: column; align-items: flex-start;">
             <div style="display: flex; flex-wrap: wrap; gap: 1rem; width: 100%;">
                 <div style="flex: 1; min-width: 150px;">
-                    <label for="petSelector">選擇寵物：</label>
+                    <label for="petSelector">選擇對象：</label>
                     <select id="petSelector" onchange="filterChart()">
                         <!-- 動態生成選項 -->
                     </select>
@@ -109,7 +109,7 @@
                     return;
                 }
 
-                // 提取所有不重複的寵物名字
+                // 提取所有不重複的對象姓名
                 const petNames = [...new Set(allData.map(item => item.pet))];
                 const selector = document.getElementById('petSelector');
                 
@@ -136,7 +136,7 @@
         }
 
         function renderChart(petName, startDate, endDate) {
-            // 同時篩選寵物與日期區間
+            // 同時篩選對象與日期區間
             const filteredData = allData.filter(item => {
                 const itemDate = item.time.split('T')[0];
                 const matchesPet = item.pet === petName;
@@ -193,7 +193,7 @@
                             callbacks: {
                                 afterBody: function(context) {
                                     const index = context[0].dataIndex;
-                                    let extra = `胰島素: ${insulins[index]} U\n餵食量: ${foods[index]} g`;
+                                    let extra = `胰島素: ${insulins[index]} U\n飲食量: ${foods[index]} g`;
                                     if (notes[index] && notes[index] !== "無") {
                                         extra += `\n備註: ${notes[index]}`;
                                     }

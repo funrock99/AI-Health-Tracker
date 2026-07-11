@@ -1,8 +1,8 @@
 /**
- * 寵物血糖紀錄系統 - Google Apps Script (GAS) 後端 (v2.0 正式版)
+ * 健康數據紀錄系統 - Google Apps Script (GAS) 後端 (v2.0 正式版)
  * 
  * 核心功能：
- * 1. LINE 多步驟引導輸入 (寵物名字 -> 血糖 -> 胰島素 -> 餵食量 -> 備註)
+ * 1. LINE 多步驟引導輸入 (姓名 -> 血糖 -> 胰島素 -> 飲食量 -> 備註)
  * 2. 台灣時區自動修正 (+08:00)，確保 Notion 顯示正確時間
  * 3. 雙重防呆邏輯：狀態原子檢查 + 資料即時銷毀，徹底杜絕重複提交
  * 4. 支援 Notion API 分頁讀取，可完整抓取所有歷史數據
@@ -14,7 +14,7 @@ const DATABASE_ID = properties.getProperty('DATABASE_ID');
 const LINE_ACCESS_TOKEN = properties.getProperty('LINE_ACCESS_TOKEN');
 const APP_SECRET = properties.getProperty('APP_SECRET') || "my-secret-key"; 
 const ALLOWED_USERS = properties.getProperty('ALLOWED_USERS') ? properties.getProperty('ALLOWED_USERS').split(',') : []; 
-const PET_NAME = properties.getProperty('PET_NAME') || "斑斑"; 
+const PET_NAME = properties.getProperty('PET_NAME') || "紀錄對象"; 
 const GEMINI_API_KEY = properties.getProperty('GEMINI_API_KEY');
 
 function doGet(e) {
@@ -213,7 +213,7 @@ function doPost(e) {
       
       if (data === 'action=input_pet') {
         cache.put(userId + "_state", "WAITING_PET_NAME", 600);
-        replyWithQuickReply(replyToken, "請輸入寵物名字:", [PET_NAME]);
+        replyWithQuickReply(replyToken, "請輸入姓名:", [PET_NAME]);
       }
       else if (data === 'action=input_bg') {
         cache.put(userId + "_state", "WAITING_BG", 600);
@@ -225,7 +225,7 @@ function doPost(e) {
       }
       else if (data === 'action=input_food') {
         cache.put(userId + "_state", "WAITING_FOOD", 600);
-        replyWithQuickReply(replyToken, "請輸入餵食量 (克):", ["0", "10", "20", "30"]);
+        replyWithQuickReply(replyToken, "請輸入飲食量 (克):", ["0", "10", "20", "30"]);
       }
       else if (data === 'action=input_note') {
         cache.put(userId + "_state", "WAITING_NOTE", 600);
@@ -268,7 +268,7 @@ function doPost(e) {
         if (success) {
           const finalDisplayTime = (selectedTime ? selectedTime.replace('T', ' ') : "現在");
           ["_state", "_bg", "_insulin", "_food", "_note", "_pet_name", "_selected_time", "_lock"].forEach(k => cache.remove(userId + k));
-          replyMessage(replyToken, "✅ 紀錄已成功同步至 Notion！\n寵物：" + petName + "\n時間：" + finalDisplayTime);
+          replyMessage(replyToken, "✅ 紀錄已成功同步至 Notion！\n姓名：" + petName + "\n時間：" + finalDisplayTime);
         } else {
           cache.remove(lockKey);
           replyMessage(replyToken, "❌ 上傳失敗，請再點一次提交。");
@@ -293,10 +293,10 @@ function saveToNotion(bg, insulin, food, note, time, petName) {
     const payload = {
       parent: { database_id: DATABASE_ID },
       properties: {
-        "寵物名字": { title: [{ text: { content: petName || PET_NAME } }] },
+        "姓名": { title: [{ text: { content: petName || PET_NAME } }] },
         "血糖值": { number: parseFloat(bg) || 0 },
         "胰島素劑量": { number: parseFloat(insulin) || 0 },
-        "餵食量": { number: parseFloat(food) || 0 },
+        "飲食量": { number: parseFloat(food) || 0 },
         "時間": { date: { start: time } },
         "備註": { rich_text: [{ text: { content: note } }] }
       }
@@ -358,10 +358,10 @@ function fetchFromNotion() {
     }
 
     return allResults.map(p => ({
-      pet: p.properties["寵物名字"] ? p.properties["寵物名字"].title[0].text.content : PET_NAME,
+      pet: p.properties["姓名"] ? p.properties["姓名"].title[0].text.content : PET_NAME,
       bg: p.properties["血糖值"] ? p.properties["血糖值"].number : 0,
       insulin: p.properties["胰島素劑量"] ? p.properties["胰島素劑量"].number : 0,
-      food: p.properties["餵食量"] ? p.properties["餵食量"].number : 0,
+      food: p.properties["飲食量"] ? p.properties["飲食量"].number : 0,
       time: p.properties["時間"] ? p.properties["時間"].date.start : "",
       note: (p.properties["備註"] && p.properties["備註"].rich_text[0]) ? p.properties["備註"].rich_text[0].text.content : ""
     }));
@@ -406,13 +406,13 @@ function sendFlexTable(replyToken, userId) {
     type: "bubble",
     header: {
       type: "box", layout: "vertical", contents: [
-        { type: "text", text: "🩸 血糖紀錄表單", weight: "bold", size: "lg", color: "#FFFFFF" }
+        { type: "text", text: "🩸 數據紀錄表單", weight: "bold", size: "lg", color: "#FFFFFF" }
       ], backgroundColor: "#1DB446"
     },
     body: {
       type: "box", layout: "vertical", spacing: "md", contents: [
         { type: "box", layout: "horizontal", action: { type: "postback", data: "action=input_pet" }, contents: [
-          { type: "text", text: "🐾 寵物", color: "#aaaaaa", size: "sm", flex: 2 },
+          { type: "text", text: "👤 姓名", color: "#aaaaaa", size: "sm", flex: 2 },
           { type: "text", text: petName, size: "sm", color: "#111111", align: "end", flex: 4 }
         ]},
         { type: "separator" },
@@ -432,7 +432,7 @@ function sendFlexTable(replyToken, userId) {
         ]},
         { type: "separator" },
         { type: "box", layout: "horizontal", action: { type: "postback", data: "action=input_food" }, contents: [
-          { type: "text", text: "🍽️ 餵食量", color: "#aaaaaa", size: "sm", flex: 2 },
+          { type: "text", text: "🍽️ 飲食量", color: "#aaaaaa", size: "sm", flex: 2 },
           { type: "text", text: food + " g", size: "sm", color: "#111111", align: "end", flex: 4 }
         ]},
         { type: "separator" },
@@ -451,7 +451,7 @@ function sendFlexTable(replyToken, userId) {
 
   safeFetch('https://api.line.me/v2/bot/message/reply', {
     method: 'post', headers: { 'Authorization': 'Bearer ' + LINE_ACCESS_TOKEN, 'Content-Type': 'application/json' },
-    payload: JSON.stringify({ replyToken: replyToken, messages: [{ type: "flex", altText: "血糖紀錄表單", contents: flexData }] })
+    payload: JSON.stringify({ replyToken: replyToken, messages: [{ type: "flex", altText: "數據紀錄表單", contents: flexData }] })
   }, tag);
 }
 
@@ -499,7 +499,7 @@ function analyzeAudioWithGemini(audioBlob) {
   const payload = {
     contents: [{
       parts: [
-        { text: `你是一位專業的寵物健康紀錄助理。
+        { text: `你是一位專業的健康紀錄助理。
 錄音環境可能包含背景噪音、風聲或雜亂人聲，請自動忽略噪音，專注提取使用者的口述數據。
 
 【基準時間 (當下時刻)】：${currentRefTime}
@@ -609,7 +609,7 @@ function sendVoiceResultFlex(replyToken, result, userId) {
             { type: "text", text: (result.insulin || "0") + " U", size: "sm", align: "end", flex: 2 }
           ]},
           { type: "box", layout: "horizontal", contents: [
-            { type: "text", text: "🍽️ 餵食量", size: "sm", color: "#aaaaaa", flex: 1 },
+            { type: "text", text: "🍽️ 飲食量", size: "sm", color: "#aaaaaa", flex: 1 },
             { type: "text", text: (result.food || "0") + " g", size: "sm", align: "end", flex: 2 }
           ]},
           { type: "box", layout: "horizontal", contents: [
