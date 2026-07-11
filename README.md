@@ -1,67 +1,219 @@
-# 🐾 AI Health Tracker
+# AI Pet Health Tracker
 
-這是一個結合 **LINE Bot**、**Google Apps Script (GAS)** 與 **Notion** 的「健康數據紀錄系統」。系統支援多位使用者管理、文字指令與語音辨識（整合 Gemini API），並提供專屬的 LINE 網頁表單（LIFF）及數據視覺化儀表板，讓使用者能夠輕鬆且直覺地追蹤血糖波動與日常健康狀況。
+以 LINE 為入口的多模態 AI 寵物健康紀錄系統，支援文字、語音與 LIFF 表單輸入，透過 Gemini 將非結構化內容轉換為可查詢的健康資料，並提供 Notion 儲存與線上 Dashboard 趨勢分析。
+
+[線上 Dashboard](https://funrock99.github.io/AI-Health-Tracker/) · [系統架構](#系統架構) · [核心設計決策](#核心設計決策) · [部署說明](#部署方式)
+
+> Demo Dashboard 已啟用存取控制。公開頁面僅展示介面，實際寵物紀錄僅限授權使用者查看。
+
+## 專案亮點
+
+- LINE 文字、語音與 LIFF 表單多管道輸入
+- Gemini 多模態音訊理解與結構化欄位抽取
+- Human-in-the-Loop 人工確認流程
+- 語音失敗時的文字與表單備援
+- 白名單、Token 驗證與防重複提交
+- Notion 紀錄管理與 Dashboard 趨勢查詢
+
+## 專案背景與解決的問題
+
+針對需要長期追蹤血糖、胰島素與飲食狀況的寵物，設計並實作一套以 LINE 為入口的多模態 AI 健康紀錄系統。
+
+1. **降低日常紀錄操作成本**  
+   使用者不需開啟傳統後台，可直接透過 LINE 完成輸入。
+2. **控制 AI 輸出的不確定性**  
+   語音辨識可能受到環境噪音、語速與口音影響，因此 AI 結果不直接寫入正式資料。
+3. **避免單一輸入方式失效**  
+   語音解析失敗時，可改用 LINE 文字或 LIFF 表單補正。
+4. **維持資料品質與一致性**  
+   寫入前執行欄位驗證、合理性檢查、人工確認與防重複提交。
+
+## 核心功能
+
+### 多管道資料輸入
+使用者可透過 LINE 文字、LINE 語音或 LIFF 網頁表單新增紀錄。
+
+### 多模態 AI 解析
+Gemini 直接理解 LINE 音訊，並抽取血糖、胰島素、飲食、時間與備註等結構化欄位。
+
+### 資料品質控制
+AI 輸出不直接寫入 Notion，必須經過欄位驗證、合理性檢查與使用者確認。
+
+### 容錯與備援
+語音受環境噪音、口音或語速影響時，使用者可改用 LINE 文字或 LIFF 表單補正。
+
+### 存取控制
+使用 LINE userId 白名單限制未授權寫入；Dashboard 則以 LINE Login 與後端 Token 驗證控制讀取權限。
+
+### 趨勢視覺化
+Dashboard 支援日期區間篩選、多寵物切換，以及血糖、胰島素、飲食與備註查詢。
+
+## 系統架構
+
+```mermaid
+flowchart LR
+    U[使用者] --> LINE[LINE Bot]
+    U --> LIFF[LIFF 表單]
+
+    LINE --> GAS[Google Apps Script]
+    LIFF --> GAS
+
+    GAS --> AUTH[白名單與 Token 驗證]
+    GAS --> GEMINI[Gemini Multimodal API]
+    GAS --> CACHE[狀態與防重複控制]
+    GAS --> NOTION[Notion Database]
+
+    NOTION --> DASH[Web Dashboard]
+    DASH --> LOGIN[LINE Login]
+```
+
+## 端到端資料流程
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant LINE
+    participant GAS
+    participant Gemini
+    participant LIFF
+    participant Notion
+
+    User->>LINE: 傳送語音紀錄
+    LINE->>GAS: Webhook Event
+    GAS->>GAS: 驗證 userId 白名單
+    GAS->>LINE: 下載音訊
+    GAS->>Gemini: 音訊＋結構化抽取 Prompt
+    Gemini-->>GAS: JSON 結果
+    GAS->>GAS: 驗證欄位與格式
+    GAS-->>User: 顯示解析結果
+    User->>LIFF: 確認或修正
+    LIFF->>GAS: 提交正式紀錄
+    GAS->>GAS: 驗證 Token 與防重複
+    GAS->>Notion: 儲存資料
+```
+
+## 多模態 AI 資料處理
+
+本系統不是將 Speech-to-Text 結果直接存入資料庫，而是將 LINE 語音音訊交由 Gemini 進行語音理解與語意抽取，輸出固定格式的結構化健康紀錄。
+
+資料流程：
+LINE 音訊 → Gemini 多模態理解 → 結構化欄位抽取 → 格式與合理性檢查 → 使用者確認或補正 → 寫入 Notion
+
+結構化輸出範例：
+```json
+{
+  "glucose": 120,
+  "insulin": 2,
+  "food": 35,
+  "note": "飯後兩小時",
+  "datetime": "2026-07-11 08:30"
+}
+```
+
+## AI 可靠性與容錯設計 (Garbage In, Garbage Out)
+
+依據 Garbage In, Garbage Out 原則，本系統不將 AI 輸出視為完全可信。可能影響語音輸入品質的因素包括：環境噪音、風聲與背景人聲、使用者口音與語速、數字發音不清楚、欄位缺漏、模型輸出格式錯誤。
+
+因此系統採用：
+1. 固定 Schema 的結構化輸出
+2. 必要欄位與資料型別驗證
+3. 數值合理性檢查
+4. Human-in-the-Loop 使用者確認
+5. LINE 文字與 LIFF 表單備援
+6. 解析失敗時不寫入正式資料
+
+## 存取控制
+
+- LINE Bot 與 LIFF 寫入流程使用 LINE userId 白名單，防止未授權使用者向 Notion 寫入垃圾資料。
+- LIFF 表單提交時，由後端以 LINE Access Token 取得可信任的 userId，不直接信任前端傳入的身分資訊。
+- Dashboard 使用 LINE Login 與後端 ID Token 驗證，取代 URL Query String 共用金鑰。
+- 系統使用短效狀態與提交鎖，降低 Webhook 重送或連續操作造成重複紀錄的風險。
+
+## 核心設計決策
+
+| 設計問題 | 決策 | 原因 |
+|---|---|---|
+| 為什麼使用 LINE？ | 以既有聊天介面作為主要入口 | 降低日常紀錄操作成本 |
+| 為什麼不直接儲存逐字稿？ | 抽取結構化欄位並要求確認 | 控制語音與模型誤判 |
+| 語音失敗怎麼辦？ | LINE 文字與 LIFF 表單備援 | 避免單一輸入管道失效 |
+| 如何防止垃圾資料？ | userId 白名單與 Token 驗證 | 僅允許家庭成員寫入 |
+| 如何防止重複紀錄？ | 短效狀態、Lock 與成功後清除 | 降低重送與連續提交風險 |
+| 為什麼使用 Notion？ | 作為低維運成本的紀錄後台 | 適合私人、小規模追蹤情境 |
+
+## 技術棧與元件責任
+
+| 技術 | 系統責任 |
+|---|---|
+| LINE Messaging API | 接收文字、語音與互動事件 |
+| LIFF | 提供資料確認與表單補正介面 |
+| Gemini Multimodal API | 音訊理解與結構化欄位抽取 |
+| Google Apps Script | Webhook、流程協調、驗證與第三方 API 整合 |
+| Notion API | 寵物健康紀錄保存與管理 |
+| Chart.js | 血糖及相關紀錄趨勢視覺化 |
+| GitHub Pages | LIFF 與 Dashboard 靜態頁面部署 |
+| LINE Login | Dashboard 使用者身分驗證 |
+
+## 專案畫面
 
 ![系統儀表板畫面](assets/screenshot_final.png)
 
-## 🌟 核心特色
+## 專案狀態
 
-- **多管道快速紀錄**：
-  - **LINE 聊天室對話**：支援文字多步驟引導與 Quick Reply 快捷選單。
-  - **語音智慧辨識**：直接在 LINE 傳送語音訊息，透過 Gemini API 自動分析並提取數據（血糖、胰島素、飲食量等）。
-  - **LIFF 網頁表單** (`form.html`)：在 LINE App 內一次性快速填表，免去繁瑣對話。
-- **數據視覺化儀表板** (`index.html`)：
-  - 串接 Notion 資料庫，即時繪製血糖趨勢圖表 (Chart.js)。
-  - 支援多位使用者數據快速切換。
-  - 支援自訂日期區間過濾歷史紀錄，精準掌握健康趨勢。
-- **Notion 雲端資料庫同步**：
-  - 所有紀錄自動同步至 Notion 資料庫，方便後續整理、檢視與匯出。
-  - 系統層級自動修正台灣時區 (UTC+08:00)，確保紀錄時間準確無誤。
-- **安全與防呆機制**：
-  - 嚴格的白名單 (Allowed Users) 權限控管，保障資料隱私。
-  - 內建 LIFF Token 真實性驗證與 APP_SECRET 金鑰防護，即使前端 `GAS_URL` 外流也無法遭人惡意讀寫。
-  - 雙重防呆邏輯，透過狀態原子檢查與即時銷毀，徹底杜絕重複提交。
+### 已完成
+- [x] LINE Bot 文字輸入
+- [x] LINE 語音訊息解析
+- [x] Gemini 多模態結構化抽取
+- [x] LIFF 表單補正
+- [x] LINE userId 寫入白名單
+- [x] Notion 同步
+- [x] Dashboard 與日期篩選
+- [x] 防重複提交
+- [x] Dashboard 整合 LINE Login
+- [x] 移除 URL Query String 共用金鑰
+- [x] GAS 後端驗證 LINE ID Token
 
-## 📁 檔案結構說明
+### 優化中
+- [ ] 程式模組化
+- [ ] 自動化測試
+- [ ] 建立錯誤碼與 Structured Logging
+- [ ] 增加異常趨勢提醒
 
-- **`Code.gs`**：系統的後端核心腳本 (GAS)。負責處理 LINE Webhook 接收、LIFF 身份驗證、Notion API 同步作業以及 Gemini 語音解析。
-- **`form.html`**：LIFF 網頁表單前端代碼，提供簡潔直觀的數據填寫介面。
-- **`index.html`**：數據視覺化面板前端代碼，包含圖表呈現與資料篩選邏輯。
+## 已知限制
 
-## 🚀 部署準備與步驟
+- 本專案用於寵物健康紀錄，不提供醫療診斷。
+- AI 解析結果可能受到環境噪音、口音與語速影響。
+- 所有 AI 解析結果需經使用者確認後才寫入正式資料。
+- Notion 適合私人與小規模紀錄，不適合大型即時交易場景。
+- Google Apps Script 受執行時間與 API Quota 限制。
+
+## 部署方式
 
 若要自行部署此專案，請依照以下步驟將程式碼部署至 Google Apps Script (GAS)：
 
 ### 1. 建立專案與貼上程式碼
-1. 前往 [Google Apps Script](https://script.google.com/) 建立新專案。
+1. 前往 Google Apps Script 建立新專案。
 2. 僅將本專案中的 `Code.gs` 內容複製並貼上至 GAS 編輯器中（`form.html` 與 `index.html` 為前端網頁，不需放到 GAS）。
 
 ### 2. 設定環境變數 (Script Properties)
-在 GAS 編輯器左側，點擊「專案設定 (齒輪圖示)」，滑到下方的「指令碼屬性」，點擊「新增指令碼屬性」，並加入以下變數：
+在 GAS 編輯器左側，點擊「專案設定 (齒輪圖示)」，新增指令碼屬性：
 - `NOTION_TOKEN`: Notion Integration Secret。
 - `DATABASE_ID`: Notion 資料庫 ID。
 - `LINE_ACCESS_TOKEN`: LINE Bot 頻道存取權杖。
 - `ALLOWED_USERS`: 授權使用的 LINE User IDs (以逗號分隔)。
-- `GEMINI_API_KEY`: Google Gemini API Key (用於音訊解析)。
-- `APP_SECRET`: 儀表板與後端通訊的安全密鑰。
-- `PET_NAME`: 預設對象名稱 (例如：姓名)。
+- `GEMINI_API_KEY`: Google Gemini API Key。
+- `LIFF_CHANNEL_ID`: LINE Login 的 Channel ID。
+- `PET_NAME`: 預設對象名稱。
 
 ### 3. 發布為網頁應用程式 (Web App)
-1. 點擊編輯器右上角的「部署」>「新增部署作業」。
-2. 點選左側齒輪圖示，選擇「網頁應用程式 (Web App)」。
-3. **執行身分**：選擇「我 (您的信箱)」。
-4. **誰可以存取**：選擇「所有人 (Anyone)」。
-5. 點擊「部署」，完成後您會得到一組「網頁應用程式網址 (Web App URL)」。
+1. 點擊「部署」>「新增部署作業」，選擇「網頁應用程式」。
+2. 執行身分選擇「我」，誰可以存取選擇「所有人」。
+3. 部署後取得「網頁應用程式網址 (Web App URL)」。
 
 ### 4. 綁定 LINE Webhook
-- 將上一步取得的 Web App URL 貼上至 LINE Developer Console 的 **Webhook URL** 並啟用。
+- 將 Web App URL 填入 LINE Developer Console 的 **Webhook URL** 並啟用。
 
 ### 5. 部署前端網頁 (LIFF 與儀表板)
-本專案的 `form.html` (LIFF 表單) 與 `index.html` (數據儀表板) 是純靜態網頁，請透過 GitHub Pages、Vercel 等服務託管：
-1. 部署前，請先使用編輯器打開 `form.html` 與 `index.html`。
-2. 找到檔案中的 `GAS_URL` 變數，替換為您在步驟 3 取得的「Web App URL」。
-3. 將這兩個檔案部署至您的網頁代管空間。
-4. 建立 LINE LIFF App，並將 Endpoint URL 指向您部署好的 `form.html` 公開網址，即可將 LIFF 連結分享至聊天室供填寫。
-
----
-*我們期許這套系統能成為您健康管理路上的最佳助手！*
+1. 使用編輯器打開 `form.html` 與 `index.html`。
+2. 找到 `GAS_URL` 替換為您的 Web App URL，並將 `index.html` 中的 `LIFF_ID` 換成您註冊的 LINE Login LIFF ID。
+3. 將這兩個檔案部署至網頁代管空間 (如 GitHub Pages)。
+4. 在 LINE Developer Console 中設定 LIFF App 的 Endpoint URL。
