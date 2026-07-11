@@ -102,7 +102,14 @@ function doPost(e) {
         if (result && result.error) {
           replyMessage(replyToken, "❌ 語音解析失敗：" + result.error);
         } else if (result && (result.glucose != null || result.insulin != null || result.food != null || result.note)) {
-          sendVoiceResultFlex(replyToken, result, userId);
+          // --- 進行資料驗證 ---
+          const validation = validateHealthData(result);
+          if (!validation.isValid) {
+            SysLog.warn(subTag, "Audio data validation failed", validation.errors);
+            replyWithQuickReply(replyToken, "⚠️ AI 抽取出的數據有誤：\n" + validation.errors.map(e => "- " + e).join("\n") + "\n\n請嘗試重新錄音或點擊下方按鈕改用手動紀錄。", ["紀錄"]);
+          } else {
+            sendVoiceResultFlex(replyToken, result, userId);
+          }
         } else {
           SysLog.warn(subTag, "No data extracted from audio", result);
           replyWithQuickReply(replyToken, "⚠️ 語音中似乎沒有包含數值紀錄，請重新錄音。", ["紀錄"]);
@@ -222,6 +229,20 @@ function doPost(e) {
           const tzOffset = 8 * 60;
           const localTime = new Date(now.getTime() + tzOffset * 60000);
           finalTime = localTime.toISOString().replace('Z', '+08:00');
+        }
+
+        // --- 進行資料驗證 ---
+        const validation = validateHealthData({
+          glucose: bg,
+          insulin: insulin,
+          food: food,
+          datetime: finalTime
+        });
+
+        if (!validation.isValid) {
+          cache.remove(lockKey);
+          replyMessage(replyToken, "⚠️ 資料有誤，請修正後再提交：\n" + validation.errors.map(e => "- " + e).join("\n"));
+          return ContentService.createTextOutput("Validation Failed");
         }
         
         const result = saveToNotion(bg, insulin, food, note, finalTime, petName);

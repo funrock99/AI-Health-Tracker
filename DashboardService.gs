@@ -67,11 +67,17 @@ function handleWebSubmitRequest(contents) {
   const { petName, bg, insulin, food, time, note } = contents;
   const finalTime = time.replace('T', ' ') + ":00+08:00";
   
-  // 驗證數值
-  if (!isValidNumber(bg)) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Invalid BG' })).setMimeType(ContentService.MimeType.JSON);
+  // 驗證數值與格式
+  const validation = validateHealthData({
+    glucose: bg,
+    insulin: insulin,
+    food: food,
+    datetime: time
+  });
+  if (!validation.isValid) {
+    SysLog.warn(subTag, "Validation failed", validation.errors);
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: validation.errors.join(", ") })).setMimeType(ContentService.MimeType.JSON);
   }
-
   const result = saveToNotion(bg, insulin || "0", food || "0", note || "無", finalTime, petName);
   
   const isSuccess = result && result.success;
