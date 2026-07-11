@@ -8,10 +8,10 @@ function saveToNotion(bg, insulin, food, note, time, petName) {
     const payload = {
       parent: { database_id: DATABASE_ID },
       properties: {
-        "姓名": { title: [{ text: { content: petName || PET_NAME } }] },
+        "寵物名字": { title: [{ text: { content: petName || PET_NAME } }] },
         "血糖值": { number: parseFloat(bg) || 0 },
         "胰島素劑量": { number: parseFloat(insulin) || 0 },
-        "飲食量": { number: parseFloat(food) || 0 },
+        "餵食量": { number: parseFloat(food) || 0 },
         "時間": { date: { start: time } },
         "備註": { rich_text: [{ text: { content: note } }] }
       }
