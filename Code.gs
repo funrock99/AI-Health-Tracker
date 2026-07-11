@@ -135,7 +135,7 @@ function doPost(e) {
       
       // 驗證成功後才查詢 Notion，加入快取機制
       const cache = CacheService.getScriptCache();
-      const cacheKey = "notion_data_" + (startDate || "all") + "_" + (endDate || "all");
+      const cacheKey = "notion_data_v2_" + (startDate || "all") + "_" + (endDate || "all");
       const cachedData = cache.get(cacheKey);
       const cachedTime = cache.get(cacheKey + "_time");
       const lastUpdate = cache.get("notion_last_update") || "0";
@@ -463,7 +463,7 @@ function fetchFromNotion(startDate, endDate) {
     }
 
     return allResults.map(p => ({
-      pet: p.properties["姓名"] ? p.properties["姓名"].title[0].text.content : PET_NAME,
+      pet: (p.properties["姓名"] && p.properties["姓名"].title && p.properties["姓名"].title.length > 0) ? p.properties["姓名"].title[0].text.content : PET_NAME,
       bg: p.properties["血糖值"] ? p.properties["血糖值"].number : 0,
       insulin: p.properties["胰島素劑量"] ? p.properties["胰島素劑量"].number : 0,
       food: p.properties["飲食量"] ? p.properties["飲食量"].number : 0,
