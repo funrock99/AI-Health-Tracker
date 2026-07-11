@@ -5,7 +5,7 @@
 /**
  * 集中式日誌工具
  */
-const SysLog = {
+var SysLog = {
   levels: { INFO: "INFO", WARN: "WARN", ERROR: "ERROR", CRITICAL: "CRITICAL" },
   
   log(level, tag, message, data = null) {
