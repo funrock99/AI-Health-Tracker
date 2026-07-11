@@ -188,11 +188,7 @@ LINE Messaging API 建議 Webhook 接收端驗證 HTTP Header 中的 `x-line-sig
 - [x] 移除 URL Query String 共用金鑰
 - [x] GAS 後端驗證 LINE ID Token
 
-### 優化中
-- [ ] 程式模組化
-- [ ] 自動化測試
-- [ ] 建立錯誤碼與 Structured Logging
-- [ ] 增加異常趨勢提醒
+
 
 ## 已知限制
 
