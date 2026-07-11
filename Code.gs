@@ -1,5 +1,5 @@
 /**
- * 健康數據紀錄系統 - Google Apps Script (GAS) 後端 (v2.0 正式版)
+ * 健康數據紀錄系統 - Google Apps Script (GAS) 後端 (v2.0 正式版) - 模組化重構
  * 
  * 核心功能：
  * 1. LINE 多步驟引導輸入 (姓名 -> 血糖 -> 胰島素 -> 飲食量 -> 備註)
@@ -8,16 +8,6 @@
  * 4. 支援 Notion API 分頁讀取，可完整抓取所有歷史數據
  */
 
-const properties = PropertiesService.getScriptProperties();
-const NOTION_TOKEN = properties.getProperty('NOTION_TOKEN');
-const DATABASE_ID = properties.getProperty('DATABASE_ID');
-// Automated Deployment Enabled via GitHub Actions
-const LINE_ACCESS_TOKEN = PropertiesService.getScriptProperties().getProperty('LINE_ACCESS_TOKEN');
-const APP_SECRET = properties.getProperty('APP_SECRET') || "my-secret-key"; 
-const ALLOWED_USERS = properties.getProperty('ALLOWED_USERS') ? properties.getProperty('ALLOWED_USERS').split(',') : []; 
-const PET_NAME = properties.getProperty('PET_NAME') || "紀錄對象"; 
-const GEMINI_API_KEY = properties.getProperty('GEMINI_API_KEY');
-
 function doGet(e) {
   const tag = "GetRequest";
   try {
@@ -25,7 +15,7 @@ function doGet(e) {
     
     // 1. 簡易健康檢查
     if (action === 'healthCheck') {
-      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', version: '2.2' }))
+      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', version: '2.3' }))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -37,58 +27,7 @@ function doGet(e) {
 }
 
 /**
- * 驗證 LIFF 提供的 Access Token 並取得 userId
- */
-function getUserIdFromToken(accessToken) {
-  try {
-    const url = 'https://api.line.me/v2/profile';
-    const options = {
-      headers: { 'Authorization': 'Bearer ' + accessToken }
-    };
-    const res = safeFetch(url, options, "VerifyLIFFToken");
-    if (res && res.getResponseCode() === 200) {
-      return JSON.parse(res.getContentText()).userId;
-    }
-    return null;
-  } catch (e) { 
-    SysLog.error("VerifyLIFFToken", "Parse Error", e.message);
-    return null; 
-  }
-}
-
-/**
- * 驗證 LINE ID Token
- */
-function verifyIdToken(idToken) {
-  const tag = "VerifyIdToken";
-  try {
-    const clientId = properties.getProperty('LIFF_CHANNEL_ID');
-    if (!clientId) {
-      SysLog.error(tag, "LIFF_CHANNEL_ID is missing in script properties");
-      return null;
-    }
-    const url = 'https://api.line.me/oauth2/v2.1/verify';
-    const payload = {
-      id_token: idToken,
-      client_id: clientId
-    };
-    const options = {
-      method: 'post',
-      payload: payload
-    };
-    const res = safeFetch(url, options, tag);
-    if (res && res.getResponseCode() === 200) {
-      return JSON.parse(res.getContentText());
-    }
-    return null;
-  } catch (e) {
-    SysLog.error(tag, "Verification Failed", e.message);
-    return null;
-  }
-}
-
-/**
- * 處理 POST 請求 - LINE Webhook 核心邏輯
+ * 處理 POST 請求 - LINE Webhook 核心邏輯與 API 路由
  */
 function doPost(e) {
   const tag = "Webhook";
@@ -106,79 +45,17 @@ function doPost(e) {
     if (logContents.events) logContents.events = "[EVENTS HIDDEN]";
     SysLog.info(tag, "Received Payload", logContents);
     
-    // --- 新增：處理來自 Dashboard (LIFF) 的查詢請求 ---
+    // --- 路由：處理來自 Dashboard (LIFF) 的查詢請求 ---
     if (contents.action === 'getDashboardData') {
-      const subTag = "DashboardData";
-      const idToken = contents.idToken;
-      const startDate = contents.startDate;
-      const endDate = contents.endDate;
-
-      if (!idToken) {
-        return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Missing Token' }))
-          .setMimeType(ContentService.MimeType.JSON);
-      }
-      
-      // GAS 驗證 Token 的有效期限與 Channel ID
-      const claims = verifyIdToken(idToken);
-      if (!claims || !claims.sub) {
-        SysLog.warn(subTag, "Invalid Token");
-        return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Invalid Token' }))
-          .setMimeType(ContentService.MimeType.JSON);
-      }
-      
-      const userId = claims.sub;
-      // 使用 claims.sub 檢查 ALLOWED_USERS
-      if (ALLOWED_USERS.length > 0 && !ALLOWED_USERS.includes(userId)) {
-        SysLog.warn(subTag, "Unauthorized user attempt", { userId: userId });
-        return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Forbidden' }))
-          .setMimeType(ContentService.MimeType.JSON);
-      }
-      
-      // 驗證成功後才查詢 Notion，加入快取機制
-      const cache = CacheService.getScriptCache();
-      const cacheKey = "notion_data_v4_" + (startDate || "all") + "_" + (endDate || "all");
-      const cachedData = cache.get(cacheKey);
-      const cachedTime = cache.get(cacheKey + "_time");
-      const lastUpdate = cache.get("notion_last_update") || "0";
-      
-      let data;
-      // 如果快取存在，且快取時間晚於最後更新時間，則使用快取
-      if (cachedData && cachedTime && parseInt(cachedTime) >= parseInt(lastUpdate)) {
-        data = JSON.parse(cachedData);
-        SysLog.info(subTag, "Cache Hit", { key: cacheKey });
-      } else {
-        data = fetchFromNotion(startDate, endDate);
-        // 將查詢結果快取 6 小時 (21600秒)
-        cache.put(cacheKey, JSON.stringify(data), 21600);
-        cache.put(cacheKey + "_time", Date.now().toString(), 21600);
-        SysLog.info(subTag, "Cache Miss or Stale, fetched from Notion", { key: cacheKey });
-      }
-
-      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', data: data }))
-        .setMimeType(ContentService.MimeType.JSON);
+      return handleDashboardRequest(contents);
     }
 
-    // --- 新增：處理來自網頁表單 (LIFF) 的提交 ---
+    // --- 路由：處理來自網頁表單 (LIFF) 的提交 ---
     if (contents.action === 'webSubmit') {
-      const subTag = "WebSubmit";
-      // 安全檢查：驗證 LIFF Token
-      const userId = getUserIdFromToken(contents.accessToken);
-      if (!userId || (ALLOWED_USERS.length > 0 && !ALLOWED_USERS.includes(userId))) {
-        SysLog.warn(subTag, "Unauthorized attempt", { userId: userId });
-        return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Forbidden' }))
-          .setMimeType(ContentService.MimeType.JSON);
-      }
-
-      const { petName, bg, insulin, food, time, note } = contents;
-      const finalTime = time.replace('T', ' ') + ":00+08:00";
-      const success = saveToNotion(bg, insulin || "0", food || "0", note || "無", finalTime, petName);
-      
-      SysLog.info(subTag, success ? "Success" : "Failed", { pet: petName, bg: bg });
-      return ContentService.createTextOutput(JSON.stringify({ status: success ? 'ok' : 'error' }))
-        .setMimeType(ContentService.MimeType.JSON);
+      return handleWebSubmitRequest(contents);
     }
 
-    // --- 原有邏輯：處理 LINE 驗證與事件 ---
+    // --- 路由：處理 LINE 驗證與事件 ---
     if (!contents.events || contents.events.length === 0) {
       return ContentService.createTextOutput(JSON.stringify({status: 'ok'})).setMimeType(ContentService.MimeType.JSON);
     }
@@ -198,7 +75,7 @@ function doPost(e) {
     }
 
     // --- 2. 針對其餘 LINE 聊天室事件的白名單檢查 ---
-    if (ALLOWED_USERS.length > 0 && !ALLOWED_USERS.includes(userId)) {
+    if (!isUserAllowed(userId)) {
       SysLog.warn(tag, "Forbidden User", { userId: userId });
       replyMessage(replyToken, "⚠️ 您目前為非授權人員，無法使用紀錄功能。\n請將您的 ID 提供給管理員以獲得權限。");
       return ContentService.createTextOutput(JSON.stringify({status: 'ok'})).setMimeType(ContentService.MimeType.JSON);
@@ -252,7 +129,7 @@ function doPost(e) {
         sendFlexTable(replyToken, userId);
       }
       else if (state === "WAITING_BG") {
-        if (!isNaN(userMsg)) {
+        if (isValidNumber(userMsg)) {
           cache.put(userId + "_bg", userMsg, 600);
           cache.put(userId + "_state", "IDLE", 600);
           sendFlexTable(replyToken, userId);
@@ -261,7 +138,7 @@ function doPost(e) {
         }
       }
       else if (state === "WAITING_INSULIN") {
-        if (!isNaN(userMsg)) {
+        if (isValidNumber(userMsg)) {
           cache.put(userId + "_insulin", userMsg, 600);
           cache.put(userId + "_state", "IDLE", 600);
           sendFlexTable(replyToken, userId);
@@ -270,7 +147,7 @@ function doPost(e) {
         }
       }
       else if (state === "WAITING_FOOD") {
-        if (!isNaN(userMsg)) {
+        if (isValidNumber(userMsg)) {
           cache.put(userId + "_food", userMsg, 600);
           cache.put(userId + "_state", "IDLE", 600);
           sendFlexTable(replyToken, userId);
@@ -285,7 +162,7 @@ function doPost(e) {
       }
     }
 
-    // 2. 處理 Postback 點擊事件
+    // 5. 處理 Postback 點擊事件
     if (event.type === 'postback') {
       const data = event.postback.data;
       
@@ -360,458 +237,3 @@ function doPost(e) {
     return ContentService.createTextOutput(JSON.stringify({status: 'error', message: error.message})).setMimeType(ContentService.MimeType.JSON);
   }
 }
-
-/**
- * Notion API：寫入資料
- */
-function saveToNotion(bg, insulin, food, note, time, petName) {
-  const tag = "NotionSave";
-  try {
-    const url = 'https://api.notion.com/v1/pages';
-    const payload = {
-      parent: { database_id: DATABASE_ID },
-      properties: {
-        "姓名": { title: [{ text: { content: petName || PET_NAME } }] },
-        "血糖值": { number: parseFloat(bg) || 0 },
-        "胰島素劑量": { number: parseFloat(insulin) || 0 },
-        "飲食量": { number: parseFloat(food) || 0 },
-        "時間": { date: { start: time } },
-        "備註": { rich_text: [{ text: { content: note } }] }
-      }
-    };
-    const options = {
-      method: 'post',
-      headers: { 
-        'Authorization': 'Bearer ' + NOTION_TOKEN, 
-        'Content-Type': 'application/json', 
-        'Notion-Version': '2022-06-28' 
-      },
-      payload: JSON.stringify(payload)
-    };
-    const res = safeFetch(url, options, tag);
-    const success = res && res.getResponseCode() === 200;
-    
-    // 如果寫入成功，更新最後異動時間，以使快取失效
-    if (success) {
-      CacheService.getScriptCache().put("notion_last_update", Date.now().toString(), 21600);
-    }
-    
-    return success;
-  } catch (e) {  
-    SysLog.error(tag, "Unexpected Error", e.message);
-    return false; 
-  }
-}
-
-/**
- * Notion API：讀取歷史數據 (支援分頁、日期過濾、限制筆數)
- */
-function fetchFromNotion(startDate, endDate) {
-  const tag = "NotionQuery";
-  let allResults = [];
-  let hasMore = true;
-  let nextCursor = null;
-  const MAX_RECORDS = 300; // 限制單次回傳最大筆數
-
-  try {
-    const url = `https://api.notion.com/v1/databases/${DATABASE_ID}/query`;
-    
-    const filter = { and: [] };
-    if (startDate) {
-      filter.and.push({ property: '時間', date: { on_or_after: startDate } });
-    }
-    if (endDate) {
-      filter.and.push({ property: '時間', date: { on_or_before: endDate } }); 
-    }
-
-    while (hasMore && allResults.length < MAX_RECORDS) {
-      const payload = {
-        sorts: [{ property: '時間', direction: 'ascending' }],
-        page_size: 100 // 單頁限制
-      };
-      
-      if (filter.and.length > 0) {
-        payload.filter = filter;
-      }
-      if (nextCursor) payload.start_cursor = nextCursor;
-
-      const options = {
-        method: 'post',
-        headers: { 
-          'Authorization': 'Bearer ' + NOTION_TOKEN, 
-          'Content-Type': 'application/json', 
-          'Notion-Version': '2022-06-28' 
-        },
-        payload: JSON.stringify(payload)
-      };
-
-      const res = safeFetch(url, options, tag);
-      if (!res || res.getResponseCode() !== 200) {
-        let errorMsg = res ? res.getContentText() : "Unknown error";
-        throw new Error("Failed to fetch data from Notion: " + errorMsg);
-      }
-      
-      const data = JSON.parse(res.getContentText());
-      allResults = allResults.concat(data.results);
-      hasMore = data.has_more;
-      nextCursor = data.next_cursor;
-    }
-
-    // 如果超過最大筆數，進行截斷
-    if (allResults.length > MAX_RECORDS) {
-      allResults = allResults.slice(0, MAX_RECORDS);
-    }
-
-    return allResults.map(p => {
-      const props = p.properties;
-      return {
-        pet: (props["寵物名字"] && props["寵物名字"].title && props["寵物名字"].title.length > 0) ? props["寵物名字"].title[0].text.content : 
-             ((props["姓名"] && props["姓名"].title && props["姓名"].title.length > 0) ? props["姓名"].title[0].text.content : PET_NAME),
-        bg: (props["血糖值"] && props["血糖值"].number) ? props["血糖值"].number : 0,
-        insulin: (props["胰島素劑量"] && props["胰島素劑量"].number) ? props["胰島素劑量"].number : ((props["胰島素"] && props["胰島素"].number) ? props["胰島素"].number : 0),
-        food: (props["餵食量"] && props["餵食量"].number) ? props["餵食量"].number : ((props["飲食量"] && props["飲食量"].number) ? props["飲食量"].number : 0),
-        time: (props["時間"] && props["時間"].date) ? props["時間"].date.start : "",
-        note: (props["備註"] && props["備註"].rich_text && props["備註"].rich_text.length > 0) ? props["備註"].rich_text[0].text.content : ""
-      };
-    });
-  } catch (e) {
-    SysLog.error(tag, "Query Failed", e.message);
-    return [];
-  }
-}
-
-/**
- * LINE 訊息發送封裝
- */
-function replyMessage(replyToken, text) {
-  safeFetch('https://api.line.me/v2/bot/message/reply', {
-    method: 'post', headers: { 'Authorization': 'Bearer ' + LINE_ACCESS_TOKEN, 'Content-Type': 'application/json' },
-    payload: JSON.stringify({ replyToken: replyToken, messages: [{ type: 'text', text: text }] })
-  }, "LINEReply");
-}
-
-function replyWithQuickReply(replyToken, text, optionsArray) {
-  safeFetch('https://api.line.me/v2/bot/message/reply', {
-    method: 'post', headers: { 'Authorization': 'Bearer ' + LINE_ACCESS_TOKEN, 'Content-Type': 'application/json' },
-    payload: JSON.stringify({ replyToken: replyToken, messages: [{ type: "text", text: text, quickReply: { items: optionsArray.map(opt => ({ type: "action", action: { type: "message", label: opt, text: opt } })) } }] })
-  }, "LINEQuickReply");
-}
-
-/**
- * 發送表格式輸入 Flex Message
- */
-function sendFlexTable(replyToken, userId) {
-  const tag = "LINEFlexTable";
-  const cache = CacheService.getUserCache();
-  const petName = cache.get(userId + "_pet_name") || PET_NAME;
-  const bg = cache.get(userId + "_bg") || "未填寫";
-  const insulin = cache.get(userId + "_insulin") || "0";
-  const food = cache.get(userId + "_food") || "0";
-  const note = cache.get(userId + "_note") || "無";
-  const selectedTime = cache.get(userId + "_selected_time");
-  const displayTime = selectedTime ? selectedTime.replace('T', ' ') : "現在 (自動抓取)";
-
-  const flexData = {
-    type: "bubble",
-    header: {
-      type: "box", layout: "vertical", contents: [
-        { type: "text", text: "🩸 數據紀錄表單", weight: "bold", size: "lg", color: "#FFFFFF" }
-      ], backgroundColor: "#1DB446"
-    },
-    body: {
-      type: "box", layout: "vertical", spacing: "md", contents: [
-        { type: "box", layout: "horizontal", action: { type: "postback", data: "action=input_pet" }, contents: [
-          { type: "text", text: "👤 姓名", color: "#aaaaaa", size: "sm", flex: 2 },
-          { type: "text", text: petName, size: "sm", color: "#111111", align: "end", flex: 4 }
-        ]},
-        { type: "separator" },
-        { type: "box", layout: "horizontal", action: { type: "postback", data: "action=input_bg" }, contents: [
-          { type: "text", text: "💉 血糖值", color: "#aaaaaa", size: "sm", flex: 2 },
-          { type: "text", text: bg + (bg === "未填寫" ? "" : " mg/dL"), size: "sm", color: bg === "未填寫" ? "#FF0000" : "#111111", align: "end", flex: 4 }
-        ]},
-        { type: "separator" },
-        { type: "box", layout: "horizontal", action: { type: "datetimepicker", data: "action=select_time", mode: "datetime" }, contents: [
-          { type: "text", text: "⏰ 時間", color: "#aaaaaa", size: "sm", flex: 2 },
-          { type: "text", text: displayTime, size: "xs", color: "#111111", align: "end", flex: 4 }
-        ]},
-        { type: "separator" },
-        { type: "box", layout: "horizontal", action: { type: "postback", data: "action=input_insulin" }, contents: [
-          { type: "text", text: "🧪 胰島素", color: "#aaaaaa", size: "sm", flex: 2 },
-          { type: "text", text: insulin + " U", size: "sm", color: "#111111", align: "end", flex: 4 }
-        ]},
-        { type: "separator" },
-        { type: "box", layout: "horizontal", action: { type: "postback", data: "action=input_food" }, contents: [
-          { type: "text", text: "🍽️ 飲食量", color: "#aaaaaa", size: "sm", flex: 2 },
-          { type: "text", text: food + " g", size: "sm", color: "#111111", align: "end", flex: 4 }
-        ]},
-        { type: "separator" },
-        { type: "box", layout: "horizontal", action: { type: "postback", data: "action=input_note" }, contents: [
-          { type: "text", text: "📝 備註", color: "#aaaaaa", size: "sm", flex: 2 },
-          { type: "text", text: note, size: "sm", color: "#111111", align: "end", flex: 4, wrap: true }
-        ]}
-      ]
-    },
-    footer: { type: "box", layout: "vertical", spacing: "sm", contents: [
-        { type: "button", style: "primary", color: "#1DB446", action: { type: "uri", label: "🚀 快速填寫表單", uri: "https://liff.line.me/2009743467-MeXtvnXF" } },
-        { type: "button", style: "secondary", color: "#EEEEEE", action: { type: "postback", label: "✅ 確認提交(分步)", data: "action=submit" } }
-      ]
-    }
-  };
-
-  safeFetch('https://api.line.me/v2/bot/message/reply', {
-    method: 'post', headers: { 'Authorization': 'Bearer ' + LINE_ACCESS_TOKEN, 'Content-Type': 'application/json' },
-    payload: JSON.stringify({ replyToken: replyToken, messages: [{ type: "flex", altText: "數據紀錄表單", contents: flexData }] })
-  }, tag);
-}
-
-/**
- * --- 語音輸入功能輔助函數 ---
- */
-
-/**
- * 從 LINE 取得音檔
- */
-function getLineMessageContent(messageId) {
-  const tag = "LINEAudioDownload";
-  const url = `https://api-data.line.me/v2/bot/message/${messageId}/content`;
-  const options = {
-    headers: { 'Authorization': 'Bearer ' + LINE_ACCESS_TOKEN }
-  };
-  const res = safeFetch(url, options, tag);
-  if (res && res.getResponseCode() === 200) {
-    return res.getBlob();
-  }
-  return null;
-}
-
-/**
- * 呼叫 Gemini 解析音檔
- */
-function analyzeAudioWithGemini(audioBlob) {
-  const tag = "GeminiAudio";
-  if (!GEMINI_API_KEY) {
-    SysLog.error(tag, "GEMINI_API_KEY is missing.");
-    return { error: "缺乏 GEMINI_API_KEY 設定" };
-  }
-  
-  // 使用原始模型名稱 (2026 基準)
-  const model = "gemini-2.5-flash"; 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
-  
-  // 取得目前台灣時間作為解析基準
-  const now = new Date();
-  const tzOffset = 8 * 60;
-  const localTime = new Date(now.getTime() + tzOffset * 60000);
-  const currentRefTime = localTime.toISOString().slice(0, 16).replace('T', ' ');
-
-  const base64Data = Utilities.base64Encode(audioBlob.getBytes());
-  const payload = {
-    contents: [{
-      parts: [
-        { text: `你是一位專業的健康紀錄助理。
-錄音環境可能包含背景噪音、風聲或雜亂人聲，請自動忽略噪音，專注提取使用者的口述數據。
-
-【基準時間 (當下時刻)】：${currentRefTime}
-
-【解析規則】：
-1. 抗噪提取：即使錄音模糊，請嘗試根據關鍵字（如：血糖、胰島素、飯、克、單位）判斷數據。
-2. 時間優先權：錄音中提到的時間 > 基準時間。若提到「剛剛、現在」，使用基準時間；若提到「早上7:30、昨晚」，請結合基準時間推算日期。
-3. 預設值：若完全未提及時間，務必回傳基準時間。
-4. Note 欄位：僅保留額外補充。若無補充則設為 null。
-
-【輸出格式】：
-只回傳 JSON，格式如下：
-{ 
-  "glucose": number, 
-  "insulin": number, 
-  "food": number, 
-  "note": "string", 
-  "datetime": "YYYY-MM-DD HH:mm" 
-}` },
-        { inline_data: { mime_type: "audio/mp4", data: base64Data } }
-      ]
-    }],
-    generation_config: { response_mime_type: "application/json" }
-  };
-
-  const options = {
-    method: 'post', contentType: 'application/json',
-    payload: JSON.stringify(payload)
-  };
-
-  const res = safeFetch(url, options, tag);
-  if (!res) return { error: "網路連線異常" };
-  
-  const resCode = res.getResponseCode();
-  const resText = res.getContentText();
-  
-  if (resCode !== 200) {
-    SysLog.error(tag, "Gemini API Error", { code: resCode, body: resText });
-    return { error: `API 錯誤 (${resCode})` };
-  }
-
-  try {
-    const result = JSON.parse(resText);
-    if (result.candidates && result.candidates[0].content.parts[0].text) {
-      let parsedText = result.candidates[0].content.parts[0].text;
-      SysLog.info(tag, "Raw AI Output", parsedText);
-      
-      // 處理可能的 Markdown 程式碼區塊包裹
-      parsedText = parsedText.replace(/```json/g, "").replace(/```/g, "").trim();
-      return JSON.parse(parsedText);
-    }
-  } catch (e) {
-    SysLog.error(tag, "JSON Parse Error", { message: e.message, raw: resText });
-    return { error: "資料格式解析失敗" };
-  }
-  return { error: "AI 未能產出有效結果" };
-}
-
-/**
- * 發送語音解析結果 Flex Message
- */
-function sendVoiceResultFlex(replyToken, result, userId) {
-  const liffId = "2009743467-MeXtvnXF"; 
-  const liffUrl = `https://liff.line.me/${liffId}`;
-  
-  // 處理時間：優先使用 Gemini 解析結果（需為有效字串且非 "null"），否則使用目前台灣時間
-  let finalTimeStr = (result.datetime && result.datetime !== "null" && result.datetime !== "undefined") ? result.datetime : "";
-  if (!finalTimeStr) {
-    const now = new Date();
-    const tzOffset = 8 * 60;
-    const localTime = new Date(now.getTime() + tzOffset * 60000);
-    finalTimeStr = localTime.toISOString().slice(0, 16).replace('T', ' ');
-  }
-
-  const params = [];
-  // 使用 != null 以便保留 0 值的數值數據
-  if (result.glucose != null) params.push(`bg=${result.glucose}`);
-  if (result.insulin != null) params.push(`ins=${result.insulin}`);
-  if (result.food != null) params.push(`food=${result.food}`);
-  if (result.note) params.push(`note=${encodeURIComponent(result.note)}`);
-  params.push(`time=${encodeURIComponent(finalTimeStr)}`);
-  params.push(`pet=${encodeURIComponent(PET_NAME)}`);
-  
-  const finalUrl = liffUrl + (params.length > 0 ? "?" + params.join("&") : "");
-
-  const flexData = {
-    type: "bubble",
-    header: {
-      type: "box", layout: "vertical", contents: [
-        { type: "text", text: "🎙️ 語音解析結果", weight: "bold", size: "lg", color: "#FFFFFF" }
-      ], backgroundColor: "#4A90E2"
-    },
-    body: {
-      type: "box", layout: "vertical", spacing: "sm", contents: [
-        { type: "text", text: "辨識內容如下，請點擊按鈕確認：", size: "sm", color: "#666666", wrap: true },
-        { type: "box", layout: "vertical", margin: "md", spacing: "xs", contents: [
-          { type: "box", layout: "horizontal", contents: [
-            { type: "text", text: "💉 血糖", size: "sm", color: "#aaaaaa", flex: 1 },
-            { type: "text", text: (result.glucose || "未偵測") + " mg/dL", size: "sm", align: "end", flex: 2 }
-          ]},
-          { type: "box", layout: "horizontal", contents: [
-            { type: "text", text: "⏰ 時間", size: "sm", color: "#aaaaaa", flex: 1 },
-            { type: "text", text: finalTimeStr, size: "sm", align: "end", flex: 2 }
-          ]},
-          { type: "box", layout: "horizontal", contents: [
-            { type: "text", text: "🧪 胰島素", size: "sm", color: "#aaaaaa", flex: 1 },
-            { type: "text", text: (result.insulin || "0") + " U", size: "sm", align: "end", flex: 2 }
-          ]},
-          { type: "box", layout: "horizontal", contents: [
-            { type: "text", text: "🍽️ 飲食量", size: "sm", color: "#aaaaaa", flex: 1 },
-            { type: "text", text: (result.food || "0") + " g", size: "sm", align: "end", flex: 2 }
-          ]},
-          { type: "box", layout: "horizontal", contents: [
-            { type: "text", text: "📝 備註", size: "sm", color: "#aaaaaa", flex: 1 },
-            { type: "text", text: result.note || "無", size: "sm", align: "end", flex: 2, wrap: true }
-          ]}
-        ]}
-      ]
-    },
-    footer: { type: "box", layout: "vertical", contents: [
-      { type: "button", style: "primary", color: "#4A90E2", action: { type: "uri", label: "✅ 確認並開啟表單", uri: finalUrl } }
-    ]}
-  };
-
-  const res = safeFetch('https://api.line.me/v2/bot/message/reply', {
-    method: 'post', headers: { 'Authorization': 'Bearer ' + LINE_ACCESS_TOKEN, 'Content-Type': 'application/json' },
-    payload: JSON.stringify({ replyToken: replyToken, messages: [{ type: "flex", altText: "語音解析結果", contents: flexData }] })
-  }, "LINE Voice Flex");
-}
-
-/**
- * --- 系統監控與錯誤處理工具 (v2.1 新增) ---
- */
-
-/**
- * 集中式日誌工具
- */
-const SysLog = {
-  levels: { INFO: "INFO", WARN: "WARN", ERROR: "ERROR", CRITICAL: "CRITICAL" },
-  
-  log(level, tag, message, data = null) {
-    const timestamp = new Date().toISOString();
-    const logEntry = {
-      timestamp: timestamp,
-      level: level,
-      tag: tag,
-      message: message,
-      data: data
-    };
-    
-    // 1. 標準控制台輸出
-    if (level === this.levels.ERROR || level === this.levels.CRITICAL) {
-      console.error(`[${level}][${tag}] ${message}`, data ? JSON.stringify(data) : "");
-    } else {
-      console.log(`[${level}][${tag}] ${message}`, data ? JSON.stringify(data) : "");
-    }
-
-    // 2. 關鍵錯誤通知 (若有設定管理員)
-    if (level === this.levels.CRITICAL && ALLOWED_USERS.length > 0) {
-      this.notifyAdmin(`🚨 【系統緊急告警】\n位置：${tag}\n訊息：${message}`);
-    }
-  },
-
-  info(tag, message, data) { this.log(this.levels.INFO, tag, message, data); },
-  warn(tag, message, data) { this.log(this.levels.WARN, tag, message, data); },
-  error(tag, message, data) { this.log(this.levels.ERROR, tag, message, data); },
-  critical(tag, message, data) { this.log(this.levels.CRITICAL, tag, message, data); },
-
-  notifyAdmin(text) {
-    try {
-      const adminId = ALLOWED_USERS[0]; // 預設名單第一位為管理員
-      UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
-        method: 'post',
-        headers: { 'Authorization': 'Bearer ' + LINE_ACCESS_TOKEN, 'Content-Type': 'application/json' },
-        payload: JSON.stringify({ to: adminId, messages: [{ type: 'text', text: text }] }),
-        muteHttpExceptions: true
-      });
-    } catch (e) {
-      console.error("Failed to notify admin:", e.message);
-    }
-  }
-};
-
-/**
- * 封裝 UrlFetchApp 確保異常皆能被捕捉與記錄
- */
-function safeFetch(url, options = {}, tag = "Fetch") {
-  options.muteHttpExceptions = true;
-  try {
-    const res = UrlFetchApp.fetch(url, options);
-    const code = res.getResponseCode();
-    const body = res.getContentText();
-    
-    if (code >= 200 && code < 300) {
-      SysLog.info(tag, `Success (${code})`);
-      return res;
-    } else {
-      SysLog.error(tag, `HTTP Error (${code})`, { url: url, response: body });
-      return res;
-    }
-  } catch (e) {
-    SysLog.critical(tag, `Network/Internal Error: ${e.message}`, { url: url });
-    return null;
-  }
-}
-
