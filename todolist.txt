@@ -1,0 +1,8 @@
+1.建立 Dashboard 專用 LIFF App
+2.index.html 加入 LINE 登入與登出
+3.移除 ?key=... 與前端 APP_SECRET
+4.前端改用 POST 傳送 ID Token
+5.GAS 驗證 Token 的有效期限與 Channel ID
+6.使用 claims.sub 檢查 ALLOWED_USERS
+7.驗證成功後才查詢 Notion
+8.移除 Log 中的 Token 與完整 Payload

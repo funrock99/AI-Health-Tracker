@@ -20,27 +20,15 @@ const GEMINI_API_KEY = properties.getProperty('GEMINI_API_KEY');
 function doGet(e) {
   const tag = "GetRequest";
   try {
-    const action = e.parameter.action;
-    const key = e.parameter.key;
+    const action = e.parameter && e.parameter.action;
     
-    // 1. 簡易健康檢查 (不需金鑰)
+    // 1. 簡易健康檢查
     if (action === 'healthCheck') {
-      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', version: '2.1' }))
+      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', version: '2.2' }))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 2. 安全檢查：驗證金鑰
-    if (key !== APP_SECRET) {
-      SysLog.warn(tag, "Unauthorized access attempt", { key: key });
-      return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Unauthorized' }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-
-    if (action === 'getData') {
-      const data = fetchFromNotion();
-      return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
-    }
-    return ContentService.createTextOutput("Invalid Action");
+    return ContentService.createTextOutput("Dashboard API has been migrated to POST.");
   } catch (err) {
     SysLog.error(tag, "Unexpected Error", err.message);
     return ContentService.createTextOutput("Error: " + err.message);
@@ -68,6 +56,37 @@ function getUserIdFromToken(accessToken) {
 }
 
 /**
+ * 驗證 LINE ID Token
+ */
+function verifyIdToken(idToken) {
+  const tag = "VerifyIdToken";
+  try {
+    const clientId = properties.getProperty('LIFF_CHANNEL_ID');
+    if (!clientId) {
+      SysLog.error(tag, "LIFF_CHANNEL_ID is missing in script properties");
+      return null;
+    }
+    const url = 'https://api.line.me/oauth2/v2.1/verify';
+    const payload = {
+      id_token: idToken,
+      client_id: clientId
+    };
+    const options = {
+      method: 'post',
+      payload: payload
+    };
+    const res = safeFetch(url, options, tag);
+    if (res && res.getResponseCode() === 200) {
+      return JSON.parse(res.getContentText());
+    }
+    return null;
+  } catch (e) {
+    SysLog.error(tag, "Verification Failed", e.message);
+    return null;
+  }
+}
+
+/**
  * 處理 POST 請求 - LINE Webhook 核心邏輯
  */
 function doPost(e) {
@@ -78,8 +97,45 @@ function doPost(e) {
       return ContentService.createTextOutput("Empty Payload");
     }
     const contents = JSON.parse(e.postData.contents);
-    SysLog.info(tag, "Received Payload", contents);
     
+    // 移除 Log 中的 Token 與完整 Payload 以確保安全性
+    const logContents = { ...contents };
+    if (logContents.accessToken) logContents.accessToken = "[HIDDEN]";
+    if (logContents.idToken) logContents.idToken = "[HIDDEN]";
+    if (logContents.events) logContents.events = "[EVENTS HIDDEN]";
+    SysLog.info(tag, "Received Payload", logContents);
+    
+    // --- 新增：處理來自 Dashboard (LIFF) 的查詢請求 ---
+    if (contents.action === 'getDashboardData') {
+      const subTag = "DashboardData";
+      const idToken = contents.idToken;
+      if (!idToken) {
+        return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Missing Token' }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+      
+      // GAS 驗證 Token 的有效期限與 Channel ID
+      const claims = verifyIdToken(idToken);
+      if (!claims || !claims.sub) {
+        SysLog.warn(subTag, "Invalid Token");
+        return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Invalid Token' }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+      
+      const userId = claims.sub;
+      // 使用 claims.sub 檢查 ALLOWED_USERS
+      if (ALLOWED_USERS.length > 0 && !ALLOWED_USERS.includes(userId)) {
+        SysLog.warn(subTag, "Unauthorized user attempt", { userId: userId });
+        return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Forbidden' }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+      
+      // 驗證成功後才查詢 Notion
+      const data = fetchFromNotion();
+      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', data: data }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
     // --- 新增：處理來自網頁表單 (LIFF) 的提交 ---
     if (contents.action === 'webSubmit') {
       const subTag = "WebSubmit";
