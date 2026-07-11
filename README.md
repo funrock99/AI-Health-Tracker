@@ -2,6 +2,8 @@
 
 這是一個結合 **LINE Bot**、**Google Apps Script (GAS)** 與 **Notion** 的「健康數據紀錄系統」。系統支援多位使用者管理、文字指令與語音辨識（整合 Gemini API），並提供專屬的 LINE 網頁表單（LIFF）及數據視覺化儀表板，讓使用者能夠輕鬆且直覺地追蹤血糖波動與日常健康狀況。
 
+![系統儀表板畫面](assets/screenshot.png)
+
 ## 🌟 核心特色
 
 - **多管道快速紀錄**：
