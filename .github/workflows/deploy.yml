@@ -30,6 +30,3 @@ jobs:
 
       - name: Push to Google Apps Script
         run: clasp push -f
-
-      - name: Deploy new version to existing Web App
-        run: clasp deploy -i AKfycbw18-mYPD1Fg7AHCb6d5Fk-1AEstyNT0zxg-q3xTzY9i7F8hA_cgPYRsTTHlPeJ8plM8w -d "Auto deployment via GitHub Actions"
