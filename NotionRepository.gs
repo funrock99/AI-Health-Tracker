@@ -26,17 +26,21 @@ function saveToNotion(bg, insulin, food, note, time, petName) {
       payload: JSON.stringify(payload)
     };
     const res = safeFetch(url, options, tag);
-    const success = res && res.getResponseCode() === 200;
+    const code = res ? res.getResponseCode() : 500;
+    const content = res ? res.getContentText() : "No response";
+    const success = code === 200;
     
     // 如果寫入成功，更新最後異動時間，以使快取失效
     if (success) {
       CacheService.getScriptCache().put("notion_last_update", Date.now().toString(), 21600);
+      return { success: true };
+    } else {
+      SysLog.error(tag, `HTTP ${code}`, content);
+      return { success: false, error: `HTTP ${code}: ${content}` };
     }
-    
-    return success;
   } catch (e) {  
     SysLog.error(tag, "Unexpected Error", e.message);
-    return false; 
+    return { success: false, error: e.message }; 
   }
 }
 

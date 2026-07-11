@@ -219,14 +219,16 @@ function doPost(e) {
           finalTime = localTime.toISOString().replace('Z', '+08:00');
         }
         
-        const success = saveToNotion(bg, insulin, food, note, finalTime, petName);
-        if (success) {
+        const result = saveToNotion(bg, insulin, food, note, finalTime, petName);
+        if (result && result.success) {
           const finalDisplayTime = (selectedTime ? selectedTime.replace('T', ' ') : "現在");
           ["_state", "_bg", "_insulin", "_food", "_note", "_pet_name", "_selected_time", "_lock"].forEach(k => cache.remove(userId + k));
-          replyMessage(replyToken, "✅ 紀錄已成功同步至 Notion！\n姓名：" + petName + "\n時間：" + finalDisplayTime);
+          replyMessage(replyToken, "✅ 已成功同步至 Notion！\n對象：" + petName + "\n時間：" + finalDisplayTime);
         } else {
           cache.remove(lockKey);
-          replyMessage(replyToken, "❌ 上傳失敗，請再點一次提交。");
+          let errorMsg = result ? result.error : "Unknown Error";
+          if (errorMsg && errorMsg.length > 500) errorMsg = errorMsg.substring(0, 500) + "...";
+          replyMessage(replyToken, "❌ 上傳失敗，請擷取此畫面並提供給開發者：\n\n" + errorMsg);
         }
       }
     }
