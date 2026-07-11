@@ -31,7 +31,7 @@
 
 ### 1. 建立專案與貼上程式碼
 1. 前往 [Google Apps Script](https://script.google.com/) 建立新專案。
-2. 將本專案中的 `Code.gs`、`form.html` 與 `index.html` 的內容分別建立並貼上至 GAS 編輯器對應的檔案中。
+2. 僅將本專案中的 `Code.gs` 內容複製並貼上至 GAS 編輯器中（`form.html` 與 `index.html` 為前端網頁，不需放到 GAS）。
 
 ### 2. 設定環境變數 (Script Properties)
 在 GAS 編輯器左側，點擊「專案設定 (齒輪圖示)」，滑到下方的「指令碼屬性」，點擊「新增指令碼屬性」，並加入以下變數：
@@ -50,9 +50,15 @@
 4. **誰可以存取**：選擇「所有人 (Anyone)」。
 5. 點擊「部署」，完成後您會得到一組「網頁應用程式網址 (Web App URL)」。
 
-### 4. 綁定 LINE 與 LIFF
+### 4. 綁定 LINE Webhook
 - 將上一步取得的 Web App URL 貼上至 LINE Developer Console 的 **Webhook URL** 並啟用。
-- 建立 LIFF App，並將 Endpoint URL 指向此 Web App URL，即可將 LIFF 網址分享至聊天室供填寫。
+
+### 5. 部署前端網頁 (LIFF 與儀表板)
+本專案的 `form.html` (LIFF 表單) 與 `index.html` (數據儀表板) 是純靜態網頁，請透過 GitHub Pages、Vercel 等服務託管：
+1. 部署前，請先使用編輯器打開 `form.html` 與 `index.html`。
+2. 找到檔案中的 `GAS_URL` 變數，替換為您在步驟 3 取得的「Web App URL」。
+3. 將這兩個檔案部署至您的網頁代管空間。
+4. 建立 LINE LIFF App，並將 Endpoint URL 指向您部署好的 `form.html` 公開網址，即可將 LIFF 連結分享至聊天室供填寫。
 
 ---
 *我們期許這套系統能成為您健康管理路上的最佳助手！*
