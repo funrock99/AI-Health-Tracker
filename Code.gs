@@ -266,6 +266,5 @@ function doPost(e) {
   }
 }
 
-// Trigger deploy
+// CI trigger note: comment-only change to verify the existing *.gs workflow path.
 
-// Trigger deploy after token update
