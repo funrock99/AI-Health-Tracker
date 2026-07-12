@@ -292,7 +292,8 @@ npm run test:e2e
 
 4. 在本機安裝 `@google/clasp` 並執行 `clasp login`。
 5. 將 `~/.clasprc.json` 內容存到 GitHub Actions secret `CLASP_TOKEN`。
-6. push 到 `main` 後，workflow 會先跑 `npm test`，成功後再執行 `clasp push -f`。
+6. 目前 workflow 僅在 `push` 到 `main` 時觸發。`paths` 包含 `*.gs`、`appsscript.json`、`package.json`、`package-lock.json`、`playwright.config.js`、`vitest.config.js` 與 `tests/**`。
+7. 觸發後 workflow 會先執行 `npm ci`、`npx playwright install --with-deps chromium` 與 `npm test`，全部成功後才執行 `clasp push -f`。
 
 ## 開發注意事項
 
