@@ -1,2 +1,4 @@
-
 AI-Health-Tracker_README優化建議.md
+node_modules/
+test-results/
+playwright-report/

@@ -1,0 +1,14 @@
+{
+  "name": "ai-health-tracker",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.2",
+    "vitest": "^3.2.4"
+  }
+}
